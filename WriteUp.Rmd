@@ -1,0 +1,341 @@
+---
+title: "Food Accessibility in LA County"
+author: "Brenda Li"
+date: "December 16, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(readr)
+library(proxy)
+library(ggmap)
+library(ggplot2)
+library(broom)
+library(maptools)
+library(sp)
+library(rgdal)
+library(maps)
+library(knitr)
+```
+
+## Introduction
+According to the [USDA](http://www.fns.usda.gov/tags/food-desert-locator), about 13.5 million people in the United States reside in urban communities with limited access to affordable or good-quality fresh food.  These regions, coined as ["food deserts"](https://en.wikipedia.org/wiki/Food_desert), are usually inhabited by lower-income populations and have become of increasing interest to researchers and policy makers since the populations that reside in these regions are also the populations that exhibit high levels of obesity, diabetes, and other health conditions linked to unhealthy diets.  Food deserts are a phenomenon that has arisen in the past couple decades, and most researchers attribute the increase in food deserts to the movement of people out of cities and into suburbs.  The theory is that as wealthier city-dwellers began moving into suburbs, so did many supermarkets that chose to shut down locations in the city in order to follow their wealthier customers to suburban areas.  In turn, low-income residents in the cities were left without supermarkets close to their homes, and thus they've had to resort to either traveling further away for food or settle for purchasing food from convenience stores and smaller markets that may not provide a sufficient stock of fresh and/or affordable produce and meats.
+
+In this project, I sought to examine the relationship between household income and food accessibility; in particular, I looked at food accessibility within census tracts of LA County, and attempted to reproduce previous results demonstrating a strong correlation between socioeconomic status and access to healthy foods.  In my analysis, I compiled multiple sources of data and experimented with several different metrics for food accessibility in order to gain a complete view of food access within the region and to accommodate for various limiting factors.
+
+## Data 
+For my analysis, I utilized three primary sources of data:
+
+1. SNAP (Supplemental Nutrition Assistance Program) retailer data
+2. ACS (American Community Survey) 2015 census estimates
+3. LA County census tract shape files
+
+### SNAP Retailer Data
+[The SNAP retailer data](http://www.fns.usda.gov/snap/retailerlocator) is a dataset of all food retailers in LA county that accept food stamps and includes the names, addresses, and geographic coordinates of every such store.  Using the store names, I separated this list of retailers into two different categories: "grocery" and "non-grocery".  I defined "grocery" as stores that had a reliable stock of fresh produce, dairy, and meats; thus, this category included larger supermarket chains and smaller grocery chains.  On the other hand, I defined "non-grocery" as other markets that sold food but may not have a consistent stock or sufficient selection of fresh food; this category included convenience stores, drug stores, liquor stores, and other small markets.  However, the SNAP retailer dataset also included stores that didn't fall into either of my defined categories---such as pizza chains and bakeries---and as a result, a small percentage of retailers on this list (about 7%) were discarded from further analysis.
+
+```{r stores, echo=FALSE}
+isConv<-function(string){
+  if (grepl("liquor",string)|
+      grepl("gas",string)|
+      grepl("eleven",string)|
+      grepl("walgreens",string)|
+      grepl("dollar",string)|
+      grepl("mini",string)|
+      grepl("convenience",string)|
+      grepl("arco am", string)|
+      grepl("chevron",string)|
+      grepl("rite",string)|
+      grepl("quick",string)|
+      grepl("kwik",string)|
+      grepl("stop",string)|
+      grepl("quik", string)|
+      grepl("station",string)|
+      grepl("cvs",string)|
+      grepl("circle k",string)|
+      grepl("big lots", string)|
+      grepl("oil",string)|
+      grepl("nmso",string)|
+      grepl("colonial energy",string)|
+      grepl("beer", string)|
+      grepl("wine",string)|
+      grepl("smoke",string)|
+      grepl("rotten robbie",string)|
+      grepl("arco", string)|
+      grepl("am pm", string)|
+      grepl("ampm",string)|
+      grepl("walgreen",string)|
+      grepl("fast",string)|
+      grepl("redwood market",string)|
+      grepl("usa",string)|
+      grepl("bimbo bakeries",string)|
+      grepl("n go",string)|
+      grepl("my goods",string)|
+      grepl("mobil",string)|
+      grepl("shell",string)|
+      grepl("valero",string)|
+      grepl("fuel",string)|
+      grepl("car",string)|
+      grepl("drug",string)|
+      grepl("petroleum",string)|
+      grepl("travelcenter",string)
+  ){
+    1
+  }
+  else if (grepl("farmer",string)|
+           grepl("trader joe",string)|
+           grepl("sprouts",string)|
+           grepl("safeway",string)|
+           grepl("99 ranch", string)|
+           grepl("marina",string)|
+           grepl("grocery",string)|
+           grepl("168", string)|
+           grepl("produce",string)|
+           grepl("smart and final",string)|
+           grepl("supermarket",string)|
+           grepl("raley",string)|
+           grepl("food maxx",string)|
+           grepl("99 cents only",string)|
+           grepl("whole foods",string)|
+           grepl("vons",string)|
+           grepl("smart &", string)|
+           grepl("costco",string)|
+           grepl("food 4",string)|
+           grepl("stater bros",string)|
+           grepl("albertsons",string)|
+           grepl("kmart",string)|
+           grepl("walmart",string)|
+           grepl("lucky",string)|
+           grepl("ralphs",string)|
+           grepl("winco",string)|
+           grepl("sam's club",string)|
+           grepl("aldi",string)|
+           grepl("target",string)|
+           grepl("cardenas",string)|
+           grepl("nob hill", string)|
+           grepl("farm", string)|
+           grepl("nutritional center", string)|
+           grepl("primetime nutrition",string)|
+           grepl("99 cent only", string)|
+           grepl("primetime nutrition",string)|
+           grepl("bonfare market",string)|
+           grepl("bel air", string)|
+           grepl("foods co",string)|
+           grepl("family market",string)|
+           grepl("mi pueblo",string)|
+           grepl("nutritional",string)|
+           grepl("village market",string)|
+           grepl("el rancho market",string)|
+           grepl("gelson's market", string)|
+           grepl("numero uno market",string)|
+           grepl("save",string)|
+           grepl("city market",string)|
+           grepl("nugget market",string)|
+           grepl("ray's food",string)|
+           grepl("northgate",string)|
+           grepl("mother earth",string)
+  ){
+    2
+  }
+  else if (grepl("papa murphy", string)|
+           grepl("fish",string)|
+           grepl("meat",string)|
+           grepl("bakery",string)|
+           grepl("donut",string)|
+           grepl("drive-thru",string)|
+           grepl("supply",string)){
+    3
+  }
+  else{
+    0
+  }
+}
+
+caSnap<-read.csv("caSnap.csv")
+
+angeles<-mutate(caSnap, store=tolower(as.character(Store_Name)))%>%mutate(county=as.character(County)) %>% filter(county=="LOS ANGELES ") %>% rowwise() %>%  mutate(type=isConv(store))
+
+Groc<-filter(angeles,type==2) %>% select(Store_Name,Longitude,Latitude)
+nonGroc<-filter(angeles,type!=2 & type!=3) %>% select(Store_Name,Longitude,Latitude)
+
+kable(head(Groc),caption="Sample Grocery Entries")
+kable(head(nonGroc),caption="Sample Non-grocery Entries")
+```
+
+### ACS Census Data
+From [Social Explorer](http://www.socialexplorer.com/), I obtained the most recent census estimates for LA county; the variables I primarily looked at were total population, median household income, average household size, and aggregate number of personal vehicles within each census tract. 
+
+```{r census, echo=FALSE}
+census<-read.csv("laCensus.csv") %>% 
+  rename(Income=SE_T057_001) %>% 
+  rename(Population=SE_T002_001) %>% 
+  rename(PopDensity=SE_T002_002) %>% 
+  rename(Area=SE_T002_003) %>% 
+  rename(Tract=Geo_TRACT) %>% 
+  mutate(FIPS=paste("0",as.character(Geo_FIPS),sep="")) %>% 
+  select(FIPS,Tract,Income,Population,PopDensity,Area) %>% 
+  filter(!is.na(Income)) %>% 
+  filter(!is.na(Population))
+
+cars<-read.csv(("cars.csv")) %>% rename(HouseSize = SE_T021_001) %>% rename(NumCar=ACS15_5yr_B08015001) %>% mutate(FIPS=paste("0",as.character(Geo_FIPS),sep="")) %>%  select(FIPS,NumCar,HouseSize)
+
+fullCensus<-left_join(census,cars,by="FIPS")
+kable(head(fullCensus),caption="Sample Census Data Entries")
+
+```
+
+
+### Shape Files
+Lastly, I used the census tract [shape files](https://www.census.gov/geo/maps-data/data/cbf/cbf_tracts.html) in order to obtain the location information (i.e. coordinates of the centroids of each census track, census tract of each grocery or non-grocery store) necessary for carrying out the food accessibility measurements in my analysis.
+
+```{r states, echo=FALSE}
+#Centroids Data
+CA <- readOGR("cb_2015_06_tract_500k.shp", layer = "cb_2015_06_tract_500k")
+caData<-CA@data
+
+centers<-coordinates(CA)
+
+centroids<-cbind(caData,centers) %>% filter(COUNTYFP=="037")
+colnames(centroids)[10] <- "x"
+colnames(centroids)[11] <- "y"
+
+#Tract Lookup
+california <- readShapePoly("cb_2015_06_tract_500k.shp")
+
+tractLookup <- function(x, y) {
+  pt <- SpatialPoints(data.frame(x = x, y = y))
+  overlay.pt <- sp::over(pt, california) # what index number does pt fall inside?
+  return(overlay.pt[3]) # give the Tract number from the census layer
+}
+
+# grocTracts<-mapply(tractLookup,Groc$Longitude,Groc$Latitude)
+# grocTracts1<-t(as.data.frame(grocTracts))
+# write.csv(grocTracts1,"grocTractsFinal.csv")
+
+grocTracts1<-read.csv("FinalgrocTracts.csv")
+groceryFull<-cbind(Groc,grocTracts1)%>% rename(Tract=V1) %>% select(Store_Name,Longitude,Latitude,Tract)
+
+# nonGrocTracts<-mapply(tractLookup,nonGroc$Longitude,nonGroc$Latitude)
+# nonGrocTracts1<-t(as.data.frame(nonGrocTracts))
+# write.csv(nonGrocTracts1,"FinalnonGrocTracts.csv")
+
+nonGrocTracts1<-read.csv("FinalnonGrocTracts.csv")
+nonGroceryFull<-cbind(nonGroc,nonGrocTracts1) %>% rename(Tract=V1) %>% select(Store_Name,Longitude,Latitude,Tract)
+
+```
+
+
+## Methodologies
+Within my analysis, I employed three different metrics for food accessibility.  For each metric, I analyzed its relationship to the median household income of each census tract.  My three metrics were:
+
+1. Minimum Distance to a Grocery Store
+2. Proportion of Grocery Stores to Population
+3. Proportion of Non-grocery Stores to Population
+
+For the first measure, I expected to see a negative correlation between median household income and minimum distance to a grocery store.  Based on the definition of food deserts, I expected to see a clear indication that residents of poorer socioeconomic statuses lacked grocery stores within their vicinity, and therefore would need to travel further to reach an affordable grocery store.
+
+For the second measure, I expected to see a positive correlation between median household income and grocery store density within census tracts.  Because grocery stores are driven to follow their wealthier customers, I expected there to be a higher proportion of grocery stores in wealthier census tracts than in lower-income census tracts.
+
+Finally, for the last measure, I expected to see a negative correlation between median household income and non-grocery store density within census tracts.  I expected to find a higher proportion of non-grocery stores in low-income census tracts because convenience stores and smaller markets would want to move in and capitalize on the demand for food retailers created by the departure of mainstream grocery stores in those areas.
+
+## Results
+
+### Minimum Distance to a Grocery Store
+For this first measure, I used the _dist_ function from the _proxy_ library to calculate the euclidian distance from the centroid of a census tract to the nearest grocery store.  With this implementation, I was hoping that the centroid would act as an appropriate substitute for the coordinates of a residence in the center of the centroid and therefore I would be able to estimate the average distance between a residence and a grocery store.  With this, I created a scatterplot to analyze the relationship between median household income and minimum distance to a grocery store.  In my plot, I used a log-scale to plot distance in order to obtain a clearer relationship between the two variables given the wide range of unevenly distributed points.
+
+```{r min, echo=TRUE}
+distances <- proxy::dist(y=groceryFull[,c("Latitude","Longitude")], x=centroids[,c("y","x")])
+mins <- (apply(distances,1,min))
+hoodDist<-cbind(centroids,mins) %>% mutate(censusTract=as.numeric(as.character(TRACTCE)))
+
+joined<-left_join(census,hoodDist,by=c("Tract"="censusTract"))
+
+ggplot(data=joined,aes(x=Income,y=log(mins)))+geom_point()+
+  stat_smooth(method=lm)+ labs(title="Income vs. Minimum Distance to a Grocery Store",x="Income",y="log(Min Distance)")
+```
+
+Based on the positive slope of the best fit line, my analysis actually indicated a positive correlation between income and minimum distance to a grocery store.  This is a surprising result because it contradicts previous research results that suggest that lower-income communities in urban environments are located further away from supermarkets and other sources of fresh food.
+
+However, there are a couple factors that may have come into play in my results.  For instance, in order to calculate distance to a supermarket, I used the centroid of each census tract.  Using the coordinates of the centroid of a census tract may skew results because it is uncertain whether the centroid actually marks a residential area or not; if a centroid were to be located in a non-residential area such as a shopping plaza, it would generate a smaller minimum distance than the actual distance between the average neighborhood and the closest grocery store.  
+
+In addition, a confounding variable that may have also affected the results is the access to transportation residents in each census tract would likely have.  For example, even though wealthier residents seem to live further away from grocery stores, they are much more likely than lower-income residents to own personal cars.  Therefore, since they would always have access to transportation, greater distance to grocery stores would have little consequence whereas being further from a grocery store makes a much more significant differance for people without access to reliable transportation.
+
+In order to examine whether access to transporation was indeed a confounding factor, I then considered the average number of personal cars per household in my analysis.  To calculate this variable, I also had to calculate the number of households in each census tract, which I did by dividing population by the average househould size of each census tract.  Then, I distinguished between the census tracts where the average number of cars per household was over one and the census tracts where the average number of cars per household was below one.  Lastly, I recreated the scatterplot from earlier, except this time, I modified my plot so that the color of each point corresponded with whether that census tract averaged at least one car per household or not.
+
+```{r cars, echo=TRUE, warning=FALSE}
+carDistr<-fullCensus %>% mutate(carDens=NumCar/(Population/HouseSize)) %>% mutate(carAccess=as.factor(ifelse(carDens>1,1,0))) %>% filter(!is.na(carAccess))
+
+carFull<-left_join(joined,carDistr,by="Tract")
+
+filteredCar<-left_join(joined,carDistr,by="Tract") %>% filter(carDens<1)
+
+ggplot(data=carFull,aes(x=Income.y,y=log(mins),colour=carAccess))+geom_point()+labs(main="Income vs. Minimum Distance with Transportation Access Consideration",x="Income",y="Minimum Distance")
+```
+
+In creating this plot, I had expected to see a clear difference in the distribution of colors, where the points that indicated both a higher median income and a greater minimum distance were blue while the points that indicated a lower median income and a greater minimum distance were red.  However, we see from the generated plot that this is not the case, and therefore these results don't explictly suggest how transportation access may have skewed my examination of income and minimum distance to a grocery store.  
+
+That being said, a quick plot of the average car per household against income and minimum distance to a grocery store tells us that there does appear to be a positive correlation between both cars per household and income as well as cars per household and minimum distance, which means we still can't disregard the effect of transportation access on our results altogether.
+
+```{r cars2, echo=TRUE, warning=FALSE}
+ggplot(data=carFull,aes(x=carDens,y=Income.y))+geom_point()+stat_smooth(method=lm)+labs(title="Avg Car per Household vs. Income",x="Avg Car per Household",y="Income")
+
+ggplot(data=carFull,aes(x=carDens,y=log(mins)))+geom_point()+stat_smooth(method=lm)+labs(title="Avg Car per Household vs. Minimum Distance",x="Avg Car per Household",y="Minimum Distance")
+```
+
+### Proportion of Grocery Stores to Population
+The next metric for food accessibility I explored was the proportion of grocery stores in each census tract to the total population of the census tract.  I once again created a scatterplot exhibiting the relationship between the median household income and relative proportion of grocery stores.  However, in contrast to my the previous plots, this time I scaled the variable of the proportion by a square root in order to accomodate for the numerous proportion values of 0, which a log scale would not have been able to account for. 
+
+```{r groc, echo=FALSE, warning=FALSE}
+grocTracts1<-read.csv("FinalGrocTracts.csv")
+groceryFull<-cbind(Groc,grocTracts1)%>% rename(Tract=V1) %>% select(Store_Name,Longitude,Latitude,Tract)
+
+grocPerCensus<-groceryFull %>% group_by(Tract) %>% summarise(n=n())
+grocDens<-left_join(fullCensus,grocPerCensus,by="Tract") %>% select(Income,n,Tract,Population)
+grocDens[is.na(grocDens)]<-0
+grocDens<-mutate(grocDens,prop=n/Population)
+
+ggplot(data=grocDens,aes(x=Income,y=sqrt(prop)))+geom_point()+stat_smooth(method=lm)+labs(title="Income vs. Proportion of Grocery Stores to Population",x="Income",y="Proportion")
+```
+
+With this measure, I had expected to find that higher household incomes correlated with a higher density of grocery stores.  However, as we can see from the negatively sloped best fit line of the scatterplot, there seems to be actually a negative correlation between the density of grocery stores and the median household income.  In other words, this analysis indicates that wealthier census tracts actually had less grocery stores proportional to population.  Before we can draw any conclusions based on this result, there are still other factors we must consider.  For instance, this measure only takes into account for the number of grocery stores within each census tract, and it isn't able to capture proximity to other grocery stores that may be very close but not within the same tract.  This means that it's possible for residents of a small census tract to have easy access to a grocery store but report no grocery stores actually within the census tract itself because of its small area.  In addition, since the list of grocery stores we're working with comes from a dataset of food retailers that accept food stamps, it's also possible that there are grocery stores within wealthier census tracts that are unaccounted for because they don't accept food stamps.  Both these factors might have had a significant impact on the findings from employing this metric. 
+
+### Proportion of Non-grocery Stores to Population
+The last metric for food accessibility I explored was the proportion of non-grocery stores in each census tract to the total population.  Just like for the previous measure, I generated a scatterplot displaying the relationsip between the two variabes, and once again, the variable of the proportion was scaled by a square root. 
+
+```{r nongroc, echo=TRUE, warning=FALSE}
+nonGrocTracts1<-read.csv("FinalnonGrocTracts.csv")
+nonGroceryFull<-cbind(nonGroc,nonGrocTracts1) %>% rename(Tract=V1) %>% select(Store_Name,Longitude,Latitude,Tract)
+
+nonGrocPerCensus<-nonGroceryFull %>% group_by(Tract) %>% summarise(n=n())
+nonGrocDens<-left_join(fullCensus,nonGrocPerCensus,by="Tract") %>% select(Income,n,Tract,Population)
+nonGrocDens[is.na(nonGrocDens)]<-0
+nonGrocDens<-mutate(nonGrocDens,prop=n/Population)
+
+ggplot(data=nonGrocDens,aes(x=Income,y=sqrt(prop)))+geom_point()+stat_smooth(method=lm)+labs(title="Income vs. Proportion of Non-Grocery Stores to Population",x="Income",y="Proportion")
+```
+
+Conversely to the last measure, I expected in this case to find a negative correlation between median household income and the density of conveniences stores.  From the negatively sloped best fit line, we can see that this analysis confirmed my prediction that a lower household income correlates with higher density of non-grocery stores.  This corresponds with previous research that has found that many lower-income communities rely on buying groceries from convenience stores and smaller markets that may not have sufficient or affordable selections of fresh produce and meats.
+
+However, even though these results correspond with the previous research that has been done on food accessibility, we'll notice that this measure faces the same limitations as the previous metric for food accessibility.  Again, smaller census tracts may report a smaller proportion of non-grocery stores even if they still are in close proximity to convenience stores in bordering census tracts.  Similarly, smaller markets and convenience stores in wealthier areas may also have been unaccounted for if they don't accepting food stamps.
+
+## Conclusions
+As apparent, the results of my analysis did not align entirely with my expectations that census tracts with lower median household incomes would perform worse in food accessibility metrics.  While lower median household income did correlate with a higher density of convenience stores, lower median household income did not correlate with a lower density of grocery stores or a greater distance to the nearest grocery stores.  Despite these results, we can't conclude altogether that LA County is immune from the issues of food inaccessibility that wrack other urban areas.  As mentioned, there were quite a few limiting factors to the measurements I used in my analysis, and future analysis should attempt to eliminate some of those constraints.  For instance, it would be beneficial for future analysis to utilize the centroids of specific neighborhoods within LA County rather than the centroids of each census tract in order to obtain more accurate measurments of the minimum distance to a grocery store.  What's more, it may also be worthwhile to focus only on the city of Los Angeles rather than the entire Los Angeles County in order to discount possible suburban areas in the analysis.
+
+Putting those limitations of the metrics I used aside, it is also important to consider what other things may have come into play to generate results that seem to contradict previous research in food accessibility.  For instance, in my analysis, I categorized 99 Cents Only stores as grocery stores because some cursory online research seemed to indicate that these stores now contain fresh produce section that is competitive with other grocery stores.  After noticing that this chain made up a significant fraction of grocery stores in my dataset, I did some [further research](http://www.latimes.com/business/la-fi-99cents9mar09-story.html) which revealed that the 99 Cents Only chain only recently expanded with produce departments in the last decade.  This means that LA residents that now have access to fresh food through their local 99 Cents Only store may not have previously had such access to fresh produce and meats ten years ago.  From this perspective, the recent expansion of discount stores into groceries has already started to address the issues of food inaccessibility in lower-income urban areas.  What's more, it will also be interesting to see also how legislation such as [AB-581](http://leginfo.legislature.ca.gov/faces/billNavClient.xhtml?bill_id=201120120AB581)--which are specifically designed to combat food deserts in California---will have an effect on food accessibility in under-priviledged urban areas.  
+
+## References
+"ACS 2015 (5-Year Estimates)". Social Explorer. 2015. http://www.socialexplorer.com/tables/ACS2015_5yr . 
+
+"Bill Text - AB-581 Public Health: food access". California Legislative Information. http://leginfo.legislature.ca.gov/faces/billNavClient.xhtml?bill_id=201120120AB581.
+
+"Cartographic Boundary Shapefiles". United States Census Bureau. 2015. https://www.census.gov/geo/maps-data/data/cbf/cbf_tracts.html.
+
+Julie Makinen. "Making a meal of 99-cent items". Los Angeles Times. 9 March 2008. http://www.latimes.com/business/la-fi-99cents9mar09-story.html.
+
+USDA Food and Nutrition Service. "Food Desert Locator". USDA FNS. 3 Nov 2016. http://www.fns.usda.gov/tags/food-desert-locator
+
+USDA Food and Nutrtion Service. "SNAP Retailer Locator". USDA FNS. 15 Nov 2016. http://www.fns.usda.gov/snap/retailerlocator .
+

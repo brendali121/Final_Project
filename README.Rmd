@@ -5,6 +5,19 @@ output: github_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(readr)
+library(proxy)
+library(ggmap)
+library(ggplot2)
+library(broom)
+library(maptools)
+library(sp)
+library(rgdal)
+library(maps)
+library(knitr)
 ```
 
 ---
@@ -14,23 +27,160 @@ output:
 ---
 
 
-* Name: 
-* Project title:
-* Write-up on RPubs: <http://rpubs.com/rudeboybert/Tree_Growth_Differences>
-* Abstract: Hello World!
+* Name: Brenda Li
+* Project title: A Look at Food Accessibility in LA County
+* Write-up on RPubs: <http://rpubs.com/brendali121/Final>
+* Abstract: According to the [USDA](http://www.fns.usda.gov/tags/food-desert-locator), about 13.5 million people in the United States reside in urban communities with limited access to affordable or good-quality fresh food.  These regions, coined as ["food deserts"](https://en.wikipedia.org/wiki/Food_desert), are usually inhabited by lower-income populations and have become of increasing interest to researchers and policy makers since the populations that reside in these regions are also the populations that exhibit high levels of obesity, diabetes, and other health conditions linked to unhealthy diets.  In this project, I sought to examine the relationship between household income and food accessibility; in particular, I looked at food accessibility within census tracts of LA County, and attempted to reproduce previous results demonstrating a strong correlation between socioeconomic status and access to healthy foods.
 
 
 ```{r, echo=FALSE, message=FALSE}
-#
-# Include code for one plot here
-#
-library(ggplot2)
-library(dplyr)
-small <- sample_n(diamonds, 2000) 
-ggplot(data=diamonds, aes(x=carat,y=price,colour=cut)) +
-  geom_point() +
-  scale_y_log10() + 
-  facet_wrap(~cut) +
-  ggtitle("Replace this plot with one of your own")
+isConv<-function(string){
+  if (grepl("liquor",string)|
+      grepl("gas",string)|
+      grepl("eleven",string)|
+      grepl("walgreens",string)|
+      grepl("dollar",string)|
+      grepl("mini",string)|
+      grepl("convenience",string)|
+      grepl("arco am", string)|
+      grepl("chevron",string)|
+      grepl("rite",string)|
+      grepl("quick",string)|
+      grepl("kwik",string)|
+      grepl("stop",string)|
+      grepl("quik", string)|
+      grepl("station",string)|
+      grepl("cvs",string)|
+      grepl("circle k",string)|
+      grepl("big lots", string)|
+      grepl("oil",string)|
+      grepl("nmso",string)|
+      grepl("colonial energy",string)|
+      grepl("beer", string)|
+      grepl("wine",string)|
+      grepl("smoke",string)|
+      grepl("rotten robbie",string)|
+      grepl("arco", string)|
+      grepl("am pm", string)|
+      grepl("ampm",string)|
+      grepl("walgreen",string)|
+      grepl("fast",string)|
+      grepl("redwood market",string)|
+      grepl("usa",string)|
+      grepl("bimbo bakeries",string)|
+      grepl("n go",string)|
+      grepl("my goods",string)|
+      grepl("mobil",string)|
+      grepl("shell",string)|
+      grepl("valero",string)|
+      grepl("fuel",string)|
+      grepl("car",string)|
+      grepl("drug",string)|
+      grepl("petroleum",string)|
+      grepl("travelcenter",string)
+  ){
+    1
+  }
+  else if (grepl("farmer",string)|
+           grepl("trader joe",string)|
+           grepl("sprouts",string)|
+           grepl("safeway",string)|
+           grepl("99 ranch", string)|
+           grepl("marina",string)|
+           grepl("grocery",string)|
+           grepl("168", string)|
+           grepl("produce",string)|
+           grepl("smart and final",string)|
+           grepl("supermarket",string)|
+           grepl("raley",string)|
+           grepl("food maxx",string)|
+           grepl("99 cents only",string)|
+           grepl("whole foods",string)|
+           grepl("vons",string)|
+           grepl("smart &", string)|
+           grepl("costco",string)|
+           grepl("food 4",string)|
+           grepl("stater bros",string)|
+           grepl("albertsons",string)|
+           grepl("kmart",string)|
+           grepl("walmart",string)|
+           grepl("lucky",string)|
+           grepl("ralphs",string)|
+           grepl("winco",string)|
+           grepl("sam's club",string)|
+           grepl("aldi",string)|
+           grepl("target",string)|
+           grepl("cardenas",string)|
+           grepl("nob hill", string)|
+           grepl("farm", string)|
+           grepl("nutritional center", string)|
+           grepl("primetime nutrition",string)|
+           grepl("99 cent only", string)|
+           grepl("primetime nutrition",string)|
+           grepl("bonfare market",string)|
+           grepl("bel air", string)|
+           grepl("foods co",string)|
+           grepl("family market",string)|
+           grepl("mi pueblo",string)|
+           grepl("nutritional",string)|
+           grepl("village market",string)|
+           grepl("el rancho market",string)|
+           grepl("gelson's market", string)|
+           grepl("numero uno market",string)|
+           grepl("save",string)|
+           grepl("city market",string)|
+           grepl("nugget market",string)|
+           grepl("ray's food",string)|
+           grepl("northgate",string)|
+           grepl("mother earth",string)
+  ){
+    2
+  }
+  else if (grepl("papa murphy", string)|
+           grepl("fish",string)|
+           grepl("meat",string)|
+           grepl("bakery",string)|
+           grepl("donut",string)|
+           grepl("drive-thru",string)|
+           grepl("supply",string)){
+    3
+  }
+  else{
+    0
+  }
+}
+
+caSnap<-read.csv("caSnap.csv")
+
+angeles<-mutate(caSnap, store=tolower(as.character(Store_Name)))%>%mutate(county=as.character(County)) %>% filter(county=="LOS ANGELES ") %>% rowwise() %>%  mutate(type=isConv(store))
+
+Groc<-filter(angeles,type==2) %>% select(Store_Name,Longitude,Latitude)
+nonGroc<-filter(angeles,type!=2 & type!=3) %>% select(Store_Name,Longitude,Latitude)
+
+nonGrocTracts1<-read.csv("FinalnonGrocTracts.csv")
+nonGroceryFull<-cbind(nonGroc,nonGrocTracts1) %>% rename(Tract=V1) %>% select(Store_Name,Longitude,Latitude,Tract)
+
+census<-read.csv("laCensus.csv") %>% 
+  rename(Income=SE_T057_001) %>% 
+  rename(Population=SE_T002_001) %>% 
+  rename(PopDensity=SE_T002_002) %>% 
+  rename(Area=SE_T002_003) %>% 
+  rename(Tract=Geo_TRACT) %>% 
+  mutate(FIPS=paste("0",as.character(Geo_FIPS),sep="")) %>% 
+  select(FIPS,Tract,Income,Population,PopDensity,Area) %>% 
+  filter(!is.na(Income)) %>% 
+  filter(!is.na(Population))
+
+cars<-read.csv(("cars.csv")) %>% rename(HouseSize = SE_T021_001) %>% rename(NumCar=ACS15_5yr_B08015001) %>% mutate(FIPS=paste("0",as.character(Geo_FIPS),sep="")) %>%  select(FIPS,NumCar,HouseSize)
+
+fullCensus<-left_join(census,cars,by="FIPS")
+
+nonGrocPerCensus<-nonGroceryFull %>% group_by(Tract) %>% summarise(n=n())
+nonGrocDens<-left_join(fullCensus,nonGrocPerCensus,by="Tract") %>% select(Income,n,Tract,Population)
+nonGrocDens[is.na(nonGrocDens)]<-0
+nonGrocDens<-mutate(nonGrocDens,prop=n/Population)
+
+ggplot(data=nonGrocDens,aes(x=Income,y=sqrt(prop)))+geom_point()+stat_smooth(method=lm)+labs(title="Income vs. Proportion of Non-Grocery Stores to Population",x="Income",y="Proportion")
+
 ```
 
